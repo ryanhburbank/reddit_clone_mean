@@ -5,7 +5,12 @@ redditCloneApp.config(function($stateProvider, $urlRouterProvider) {
     .state('home', {
       url: '/',
       templateUrl: '/home.html',
-      controller: 'HomeCtrl'
+      controller: 'HomeCtrl',
+      resolve: {
+        postPromise: function(postService) {
+          return postService.getAll();
+        }
+      }
     })
     .state('post', {
       url: '/posts/{id}',
@@ -17,8 +22,16 @@ redditCloneApp.config(function($stateProvider, $urlRouterProvider) {
     $urlRouterProvider.otherwise('/');
 });
 
-redditCloneApp.service('postService', function() {
-  this.posts = [];
+redditCloneApp.factory('postService', function($http) {
+  var service = { posts: [] };
+
+  service.getAll = function() {
+    return $http.get('/posts').success(function(data) {
+      angular.copy(data, service.posts);
+    });
+  };
+
+  return service;
 });
 
 redditCloneApp.controller('HomeCtrl', function($scope, postService){
