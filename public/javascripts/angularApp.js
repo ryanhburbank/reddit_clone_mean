@@ -8,14 +8,19 @@ redditCloneApp.config(function($stateProvider, $urlRouterProvider) {
       controller: 'HomeCtrl',
       resolve: {
         postPromise: function(postService) {
-          return postService.getAll();
+          return postService.index();
         }
       }
     })
     .state('post', {
       url: '/posts/{id}',
       templateUrl: '/post.html',
-      controller: 'PostCtrl'
+      controller: 'PostCtrl',
+      resolve: {
+        post: function($stateParams, postService) {
+          return postService.show($stateParams.id);
+        }
+      }
     });
 
     $urlRouterProvider.when('', '/');
@@ -25,9 +30,55 @@ redditCloneApp.config(function($stateProvider, $urlRouterProvider) {
 redditCloneApp.factory('postService', function($http) {
   var service = { posts: [] };
 
-  service.getAll = function() {
+  service.index = function() {
     return $http.get('/posts').success(function(data) {
       angular.copy(data, service.posts);
+    });
+  };
+
+  service.show = function(postId) {
+    return $http.get('/posts/' + postId).then(function(response) {
+      return response.data;
+    });
+  };
+
+  service.create = function(post) {
+    return $http.post('/posts').success(function(data) {
+      service.posts.push(data);
+    });
+  };
+
+  service.upvote = function(post) {
+    return $http.put('/posts/' + post._id + '/upvote').success(function(data) {
+      post.upvotes += 1;
+    });
+  };
+
+  service.downvote = function(post) {
+    return $http.put('/posts/' + post._id + '/downvote').success(function(data) {
+      post.upvotes -= 1;
+    });
+  };
+
+  service.addComment = function(postId, comment) {
+    return $http.post('/posts/' + postId + '/comments', comment);
+  };
+
+  return service;
+});
+
+redditCloneApp.factory('commentService', function($http) {
+  var service = {};
+
+  service.upvote = function(comment) {
+    return $http.put('/comments/' + comment._id + '/upvote').success(function(data) {
+      comment.upvotes += 1;
+    });
+  };
+
+  service.downvote = function(comment) {
+    return $http.put('/comments/' + comment._id + '/downvote').success(function(data) {
+      comment.upvotes -= 1;
     });
   };
 
@@ -49,22 +100,20 @@ redditCloneApp.controller('HomeCtrl', function($scope, postService){
     $scope.addPost = function() {
       if (titleBlank()) { return; };
 
-      $scope.posts.push({
+      postService.create({
         title: $scope.title,
-        link: $scope.link,
-        upvotes: 0,
-        comments: []
+        link: $scope.link
       });
 
       clearForm();
     };
 
-    $scope.upvote = function(post) { post.upvotes += 1; };
-    $scope.downvote = function(post) { post.upvotes -= 1; };
+    $scope.upvote = function(post) { postService.upvote(post); };
+    $scope.downvote = function(post) { postService.downvote(post); };
 });
 
-redditCloneApp.controller('PostCtrl', function($scope, $stateParams, postService) {
-  $scope.post = postService.posts[$stateParams.id];
+redditCloneApp.controller('PostCtrl', function($scope, postService, commentService, post) {
+  $scope.post = post;
 
   var commentEmpty = function() {
     if($scope.body === '') { return true; }
@@ -77,12 +126,16 @@ redditCloneApp.controller('PostCtrl', function($scope, $stateParams, postService
   $scope.addComment = function(){
     if(commentEmpty()) { return; }
 
-    $scope.post.comments.push({
+    postService.addComment($scope.post._id, {
       body: $scope.body,
-      author: 'user',
-      upvotes: 0
+    }).success(function(comment) {
+      $scope.post.comments = ($scope.post.comments || []);
+      $scope.post.comments.push(comment);
     });
 
     clearForm();
   };
+
+  $scope.upvoteComment = function(comment) { commentService.upvote(comment); };
+  $scope.downvoteComment = function(comment) { commentService.downvote(comment); };
 });
