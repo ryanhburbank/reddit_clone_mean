@@ -93,7 +93,7 @@ router.post('/posts/:post/comments', function(request, response, next) {
   });
 });
 
-router.post('/comments/:comment/upvote', function(request, response, next) {
+router.put('/comments/:comment/upvote', function(request, response, next) {
   request.comment.upvote(function(error, comment) {
     if (error) { return next(error); }
 
@@ -101,7 +101,7 @@ router.post('/comments/:comment/upvote', function(request, response, next) {
   });
 });
 
-router.post('/comments/:comment/downvote', function(request, response, next) {
+router.put('/comments/:comment/downvote', function(request, response, next) {
   request.comment.downvote(function(error, comment) {
     if (error) { return next(error); }
 
