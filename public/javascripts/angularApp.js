@@ -2,6 +2,26 @@ var redditCloneApp = angular.module('redditClone', ['ui.router'])
 
 redditCloneApp.config(function($stateProvider, $urlRouterProvider) {
   $stateProvider
+    .state('login', {
+      url: '/login',
+      templateUrl: '/login.html',
+      controller: 'AuthCtrl',
+      onEnter: function($state, authService){
+        if(authService.isLoggedIn()){
+          $state.go('home');
+        }
+      }
+    })
+    .state('register', {
+      url: '/register',
+      templateUrl: '/register.html',
+      controller: 'AuthCtrl',
+      onEnter: function($state, authService){
+        if(authService.isLoggedIn()){
+          $state.go('home');
+        }
+      }
+    })
     .state('home', {
       url: '/',
       templateUrl: '/home.html',
@@ -27,7 +47,59 @@ redditCloneApp.config(function($stateProvider, $urlRouterProvider) {
     $urlRouterProvider.otherwise('/');
 });
 
-redditCloneApp.factory('postService', function($http) {
+
+redditCloneApp.factory('authService', function($http, $window) {
+  var service = {};
+
+  service.saveToken = function(token) {
+    $window.localStorage['reddit-clone-token'] = token;
+  };
+
+  service.getToken = function() {
+    return $window.localStorage['reddit-clone-token'];
+  };
+
+  service.isLoggedIn = function() {
+    var token = service.getToken();
+
+    if(token) {
+      var payload = JSON.parse($window.atob(token.split('.')[1]));
+
+      return payload.exp > Date.now() / 1000;
+    } else {
+      return false;
+    }
+  };
+
+  service.currentUser = function() {
+    if(service.isLoggedIn()) {
+      var token = service.getToken();
+      var payload = JSON.parse($window.atob(token.split('.')[1]));
+
+      return payload.username;
+    }
+  };
+
+  service.register = function(user) {
+    return $http.post('/register', user).success(function(data) {
+      service.saveToken(data.token);
+    });
+  }
+
+  service.logIn = function(user) {
+    return $http.post('/login', user).success(function(data) {
+      service.saveToken(data.token);
+    });
+  };
+
+  service.logOut = function() {
+    $window.localStorage.removeItem('reddit-clone-token');
+  };
+
+  return service;
+});
+
+redditCloneApp.factory('postService', function($http, authService) {
   var service = { posts: [] };
 
   service.index = function() {
@@ -43,41 +115,53 @@ redditCloneApp.factory('postService', function($http) {
   };
 
   service.create = function(post) {
-    return $http.post('/posts').success(function(data) {
+    return $http.post('/posts', post, {
+      headers: { Authorization: 'Bearer ' + authService.getToken()}
+    }).success(function(data) {
       service.posts.push(data);
     });
   };
 
   service.upvote = function(post) {
-    return $http.put('/posts/' + post._id + '/upvote').success(function(data) {
+    return $http.put('/posts/' + post._id + '/upvote', null, {
+      headers: { Authorization: 'Bearer ' + authService.getToken()}
+    }).success(function(data) {
       post.upvotes += 1;
     });
   };
 
   service.downvote = function(post) {
-    return $http.put('/posts/' + post._id + '/downvote').success(function(data) {
+    return $http.put('/posts/' + post._id + '/downvote', null, {
+      headers: { Authorization: 'Bearer ' + authService.getToken()}
+    }).success(function(data) {
       post.upvotes -= 1;
     });
   };
 
   service.addComment = function(postId, comment) {
-    return $http.post('/posts/' + postId + '/comments', comment);
+    return $http.post('/posts/' + postId + '/comments', comment, {
+      headers: { Authorization: 'Bearer ' + authService.getToken()}
+    });
   };
 
   return service;
 });
 
-redditCloneApp.factory('commentService', function($http) {
+redditCloneApp.factory('commentService', function($http, authService) {
   var service = {};
 
   service.upvote = function(comment) {
-    return $http.put('/comments/' + comment._id + '/upvote').success(function(data) {
+    return $http.put('/comments/' + comment._id + '/upvote', null, {
+      headers: { Authorization: 'Bearer ' + authService.getToken()}
+    }).success(function(data) {
       comment.upvotes += 1;
     });
   };
 
   service.downvote = function(comment) {
-    return $http.put('/comments/' + comment._id + '/downvote').success(function(data) {
+    return $http.put('/comments/' + comment._id + '/downvote', null, {
+      headers: { Authorization: 'Bearer ' + authService.getToken()}
+    }).success(function(data) {
       comment.upvotes -= 1;
     });
   };
@@ -85,8 +169,35 @@ redditCloneApp.factory('commentService', function($http) {
   return service;
 });
 
-redditCloneApp.controller('HomeCtrl', function($scope, postService){
+redditCloneApp.controller('AuthCtrl', function($scope, $state, authService) {
+  $scope.user = {};
+
+  $scope.register = function(){
+    authService.register($scope.user).error(function(error){
+      $scope.error = error;
+    }).then(function(){
+      $state.go('home');
+    });
+  };
+
+  $scope.logIn = function(){
+    authService.logIn($scope.user).error(function(error){
+      $scope.error = error;
+    }).then(function(){
+      $state.go('home');
+    });
+  };
+});
+
+redditCloneApp.controller('NavCtrl', function($scope, authService) {
+  $scope.isLoggedIn = authService.isLoggedIn;
+  $scope.currentUser = authService.currentUser;
+  $scope.logOut = authService.logOut;
+});
+
+redditCloneApp.controller('HomeCtrl', function($scope, postService, authService){
     $scope.posts = postService.posts;
+    $scope.isLoggedIn = authService.isLoggedIn;
 
     var clearForm = function() {
       $scope.title = '';
@@ -112,8 +223,9 @@ redditCloneApp.controller('HomeCtrl', function($scope, postService){
     $scope.downvote = function(post) { postService.downvote(post); };
 });
 
-redditCloneApp.controller('PostCtrl', function($scope, postService, commentService, post) {
+redditCloneApp.controller('PostCtrl', function($scope, postService, commentService, post, authService) {
   $scope.post = post;
+  $scope.isLoggedIn = authService.isLoggedIn;
 
   var commentEmpty = function() {
     if($scope.body === '') { return true; }
